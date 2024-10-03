@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>පාසල් තොග ගබඩා පද්ධතිය</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>පාසල් තොග ගබඩා පද්ධතිය</h1>
+        
+        <form id="inventoryForm">
+            <div class="form-group">
+                <label for="itemDescription">අයිතම විස්තරය:</label>
+                <input type="text" id="itemDescription" required>
+            </div>
+            <div class="form-group">
+                <label for="stockPage">ගබඩා පොත් පිටු අංකය:</label>
+                <input type="text" id="stockPage" required>
+            </div>
+            <div class="form-group">
+                <label for="purchaseDate">මිලදී ගත් දිනය:</label>
+                <input type="date" id="purchaseDate" required>
+            </div>
+            <div class="form-group">
+                <label for="invoiceNumber">ඉන්වොයිස් අංකය:</label>
+                <input type="text" id="invoiceNumber" required>
+            </div>
+            <div class="form-group">
+                <label for="receiptNumber">කුවිතාන්සි අංකය:</label>
+                <input type="text" id="receiptNumber" required>
+            </div>
+            <div class="form-group">
+                <label for="supplierName">සැපයුම්කරුගේ නම:</label>
+                <input type="text" id="supplierName" required>
+            </div>
+            <div class="form-group">
+                <label for="quantityReceived">ලැබුණු ප්‍රමාණය:</label>
+                <input type="number" id="quantityReceived" required>
+            </div>
+            <div class="form-group">
+                <label for="quantityIssued">නිකුත් කළ ප්‍රමාණය:</label>
+                <input type="number" id="quantityIssued" required>
+            </div>
+            <button type="submit" class="btn">අයිතමය එකතු කරන්න/යාවත්කාලීන කරන්න</button>
+        </form>
+
+        <div id="purchaseHistory"></div>
+
+        <div class="buttons">
+            <button onclick="printInventory()" class="btn">තොග ලැයිස්තුව මුද්‍රණය කරන්න</button>
+            <button onclick="exportBackup()" class="btn">උපස්ථ පිටපත</button>
+            <input type="file" id="restoreFile" style="display: none;" onchange="importBackup(event)">
+            <button onclick="document.getElementById('restoreFile').click()" class="btn">ප්‍රතිස්ථාපනය කරන්න</button>
+        </div>
+
+        <input type="text" id="search" placeholder="අයිතම සොයන්න...">
+
+        <h2>තොග ලැයිස්තුව</h2>
+        <table id="inventoryTable">
+            <thead>
+                <tr>
+                    <th>අයිතම විස්තරය</th>
+                    <th>ගබඩා පොත් පිටු අංකය</th>
+                    <th>මිලදී ගත් දිනය</th>
+                    <th>ඉන්වොයිස් අංකය</th>
+                    <th>කුවිතාන්සි අංකය</th>
+                    <th>සැපයුම්කරුගේ නම</th>
+                    <th>ලැබුණු ප්‍රමාණය</th>
+                    <th>නිකුත් කළ ප්‍රමාණය</th>
+                    <th>ඉතිරි ප්‍රමාණය</th>
+                    <th>ක්‍රියා</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
