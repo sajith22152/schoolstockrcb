@@ -316,51 +316,75 @@ function printInventory() {
     window.print();
 }
 
-// Backup Inventory Data
+// Backup Inventory and Purchase History Data
 function exportBackup() {
-    const transaction = db.transaction(['inventory'], 'readonly');
-    const store = transaction.objectStore('inventory');
-    const request = store.getAll();
+    const inventoryData = {};
+    const transaction = db.transaction(['inventory', 'purchaseHistory'], 'readonly');
+    const inventoryStore = transaction.objectStore('inventory');
+    const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
 
-    request.onsuccess = function(event) {
-        const inventory = event.target.result;
-        const jsonString = JSON.stringify(inventory);
-        const blob = new Blob([jsonString], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
+    inventoryStore.getAll().onsuccess = function(event) {
+        inventoryData.inventory = event.target.result;
 
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = "inventory_backup.json";
-        link.click();
+        purchaseHistoryStore.getAll().onsuccess = function(event) {
+            inventoryData.purchaseHistory = event.target.result;
+
+            const jsonString = JSON.stringify(inventoryData);
+            const blob = new Blob([jsonString], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = "inventory_backup_with_history.json";
+            link.click();
+        };
     };
 }
 
-// Restore Inventory Data
+// Restore Inventory and Purchase History Data
 function importBackup(event) {
     const file = event.target.files[0];
     const reader = new FileReader();
     reader.onload = function(e) {
         const data = JSON.parse(e.target.result);
-        const transaction = db.transaction(['inventory'], 'readwrite');
-        const store = transaction.objectStore('inventory');
+        const transaction = db.transaction(['inventory', 'purchaseHistory'], 'readwrite');
+        const inventoryStore = transaction.objectStore('inventory');
+        const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
 
         // Clear existing data
-        store.clear();
+        inventoryStore.clear();
+        purchaseHistoryStore.clear();
 
-        let addedCount = 0;
-        data.forEach(item => {
-            const request = store.add(item);
-            request.onsuccess = function() {
-                addedCount++;
-                if (addedCount === data.length) {
-                    loadInventory();
-                    alert('දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී.');
-                }
+        let addedInventoryCount = 0;
+        let addedPurchaseHistoryCount = 0;
+
+        // Restore inventory data
+        data.inventory.forEach(item => {
+            inventoryStore.add(item).onsuccess = function() {
+                addedInventoryCount++;
+                checkCompletion();
             };
         });
+
+        // Restore purchase history data
+        data.purchaseHistory.forEach(history => {
+            purchaseHistoryStore.add(history).onsuccess = function() {
+                addedPurchaseHistoryCount++;
+                checkCompletion();
+            };
+        });
+
+        function checkCompletion() {
+            if (addedInventoryCount === data.inventory.length && 
+                addedPurchaseHistoryCount === data.purchaseHistory.length) {
+                loadInventory();
+                alert('දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී.');
+            }
+        }
     };
     reader.readAsText(file);
 }
+
 
 // Update all rows' distribution history
 function updateAllDistributionHistory() {
