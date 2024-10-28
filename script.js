@@ -343,7 +343,8 @@ function exportBackup() {
 
                 const link = document.createElement('a');
                 link.href = url;
-                link.download = "inventory_backup_complete.json";
+                const date = new Date().toISOString().split('T')[0];
+                link.download = `inventory_backup_${date}.json`;
                 link.click();
             };
         };
@@ -356,60 +357,75 @@ function importBackup(event) {
     const reader = new FileReader();
     
     reader.onload = function(e) {
-        const data = JSON.parse(e.target.result);
-        const transaction = db.transaction(['inventory', 'purchaseHistory', 'distribution'], 'readwrite');
-        const inventoryStore = transaction.objectStore('inventory');
-        const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
-        const distributionStore = transaction.objectStore('distribution');
+        try {
+            const data = JSON.parse(e.target.result);
+            const transaction = db.transaction(['inventory', 'purchaseHistory', 'distribution'], 'readwrite');
+            const inventoryStore = transaction.objectStore('inventory');
+            const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
+            const distributionStore = transaction.objectStore('distribution');
 
-        // Clear existing data
-        inventoryStore.clear();
-        purchaseHistoryStore.clear();
-        distributionStore.clear();
+            // Clear existing data
+            inventoryStore.clear();
+            purchaseHistoryStore.clear();
+            distributionStore.clear();
 
-        let addedInventoryCount = 0;
-        let addedPurchaseHistoryCount = 0;
-        let addedDistributionCount = 0;
+            let addedInventoryCount = 0;
+            let addedPurchaseHistoryCount = 0;
+            let addedDistributionCount = 0;
 
-        // Restore inventory data
-        data.inventory.forEach(item => {
-            inventoryStore.add(item).onsuccess = function() {
-                addedInventoryCount++;
-                checkCompletion();
-            };
-        });
-
-        // Restore purchase history data
-        data.purchaseHistory.forEach(history => {
-            purchaseHistoryStore.add(history).onsuccess = function() {
-                addedPurchaseHistoryCount++;
-                checkCompletion();
-            };
-        });
-
-        // Restore distribution data
-        if (data.distribution) {
-            data.distribution.forEach(dist => {
-                distributionStore.add(dist).onsuccess = function() {
-                    addedDistributionCount++;
+            // Restore inventory data
+            data.inventory.forEach(item => {
+                inventoryStore.add(item).onsuccess = function() {
+                    addedInventoryCount++;
                     checkCompletion();
                 };
             });
-        }
 
-        function checkCompletion() {
-            if (addedInventoryCount === data.inventory.length && 
-                addedPurchaseHistoryCount === data.purchaseHistory.length &&
-                (!data.distribution || addedDistributionCount === data.distribution.length)) {
-                loadInventory();
-                alert('දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී.');
+            // Restore purchase history data
+            data.purchaseHistory.forEach(history => {
+                purchaseHistoryStore.add(history).onsuccess = function() {
+                    addedPurchaseHistoryCount++;
+                    checkCompletion();
+                };
+            });
+
+            // Restore distribution data
+            if (data.distribution && data.distribution.length > 0) {
+                data.distribution.forEach(dist => {
+                    distributionStore.add(dist).onsuccess = function() {
+                        addedDistributionCount++;
+                        checkCompletion();
+                    };
+                });
+            } else {
+                console.log('No distribution data found in backup');
+                addedDistributionCount = 0; // Set to 0 if no distribution data
             }
+
+            function checkCompletion() {
+                const totalExpectedItems = 
+                    data.inventory.length + 
+                    data.purchaseHistory.length + 
+                    (data.distribution ? data.distribution.length : 0);
+                
+                const totalAddedItems = 
+                    addedInventoryCount + 
+                    addedPurchaseHistoryCount + 
+                    addedDistributionCount;
+
+                if (totalAddedItems === totalExpectedItems) {
+                    loadInventory();
+                    alert('දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී.');
+                }
+            }
+        } catch (error) {
+            console.error('Error during restore:', error);
+            alert('දත්ත ප්‍රතිස්ථාපනය කිරීමේදී දෝෂයක් ඇති විය. කරුණාකර වලංගු backup ගොනුවක් තෝරන්න.');
         }
     };
     
     reader.readAsText(file);
 }
-
 // Update all rows' distribution history
 function updateAllDistributionHistory() {
     const rows = document.querySelectorAll('#inventoryTable tbody tr');
