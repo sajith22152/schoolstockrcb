@@ -316,47 +316,60 @@ function printInventory() {
     window.print();
 }
 
-// Backup Inventory and Purchase History Data
+// Backup Inventory, Purchase History and Distribution Data
 function exportBackup() {
-    const inventoryData = {};
-    const transaction = db.transaction(['inventory', 'purchaseHistory'], 'readonly');
+    const backupData = {};
+    const transaction = db.transaction(['inventory', 'purchaseHistory', 'distribution'], 'readonly');
     const inventoryStore = transaction.objectStore('inventory');
     const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
+    const distributionStore = transaction.objectStore('distribution');
 
+    // Get inventory data
     inventoryStore.getAll().onsuccess = function(event) {
-        inventoryData.inventory = event.target.result;
+        backupData.inventory = event.target.result;
 
+        // Get purchase history data
         purchaseHistoryStore.getAll().onsuccess = function(event) {
-            inventoryData.purchaseHistory = event.target.result;
+            backupData.purchaseHistory = event.target.result;
 
-            const jsonString = JSON.stringify(inventoryData);
-            const blob = new Blob([jsonString], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
+            // Get distribution data
+            distributionStore.getAll().onsuccess = function(event) {
+                backupData.distribution = event.target.result;
 
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = "inventory_backup_with_history.json";
-            link.click();
+                // Create and download the backup file
+                const jsonString = JSON.stringify(backupData);
+                const blob = new Blob([jsonString], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = "inventory_backup_complete.json";
+                link.click();
+            };
         };
     };
 }
 
-// Restore Inventory and Purchase History Data
+// Restore Inventory, Purchase History and Distribution Data
 function importBackup(event) {
     const file = event.target.files[0];
     const reader = new FileReader();
+    
     reader.onload = function(e) {
         const data = JSON.parse(e.target.result);
-        const transaction = db.transaction(['inventory', 'purchaseHistory'], 'readwrite');
+        const transaction = db.transaction(['inventory', 'purchaseHistory', 'distribution'], 'readwrite');
         const inventoryStore = transaction.objectStore('inventory');
         const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
+        const distributionStore = transaction.objectStore('distribution');
 
         // Clear existing data
         inventoryStore.clear();
         purchaseHistoryStore.clear();
+        distributionStore.clear();
 
         let addedInventoryCount = 0;
         let addedPurchaseHistoryCount = 0;
+        let addedDistributionCount = 0;
 
         // Restore inventory data
         data.inventory.forEach(item => {
@@ -374,17 +387,28 @@ function importBackup(event) {
             };
         });
 
+        // Restore distribution data
+        if (data.distribution) {
+            data.distribution.forEach(dist => {
+                distributionStore.add(dist).onsuccess = function() {
+                    addedDistributionCount++;
+                    checkCompletion();
+                };
+            });
+        }
+
         function checkCompletion() {
             if (addedInventoryCount === data.inventory.length && 
-                addedPurchaseHistoryCount === data.purchaseHistory.length) {
+                addedPurchaseHistoryCount === data.purchaseHistory.length &&
+                (!data.distribution || addedDistributionCount === data.distribution.length)) {
                 loadInventory();
                 alert('දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී.');
             }
         }
     };
+    
     reader.readAsText(file);
 }
-
 
 // Update all rows' distribution history
 function updateAllDistributionHistory() {
