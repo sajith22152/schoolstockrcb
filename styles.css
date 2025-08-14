@@ -41,7 +41,7 @@ label {
     font-weight: bold;
 }
 
-input {
+input, select, textarea {
     padding: 8px;
     margin-top: 5px;
     border-radius: 4px;
@@ -92,6 +92,8 @@ tr:hover {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 20px;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 input#search {
@@ -142,4 +144,15 @@ input#search {
     margin: 0;
     color: #7f8c8d;
     font-style: italic;
+}
+
+/* Firebase status */
+.firebase-status {
+    margin-top: 18px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.95em;
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    color: #6b4f00;
 }

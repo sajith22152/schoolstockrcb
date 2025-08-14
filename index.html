@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>පාසල් තොග ගබඩා පද්ධතිය</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Firebase (compat) SDKs - replace versions if you prefer -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
 <body>
     <div class="container">
@@ -75,7 +78,11 @@
             </thead>
             <tbody></tbody>
         </table>
+
+        <div id="firebaseStatus" class="firebase-status">Firebase සම්බන්ධතා තත්ත්වය: නොසැකසී ඇත</div>
     </div>
-    <script src="script.js"></script>
+
+    <!-- IMPORTANT: this references the JS file included in your upload -->
+    <script src="scripts.js"></script>
 </body>
 </html>

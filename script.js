@@ -1,6 +1,49 @@
 let db;
 const request = indexedDB.open('schoolInventory', 4);
 
+// --- FIREBASE CONFIG: replace the placeholders with your project's config ---
+const firebaseConfig = {
+    apiKey: "AIzaSyAPiJHMYJzQdRh0XrE42803BaT7jzGuZ9A",
+    authDomain: "REPLACE_WITH_YOUR_AUTH_DOMAIN",
+    databaseURL: "school-stock.firebaseapp.com", // e.g. "https://your-project.firebaseio.com"
+    projectId: "school-stock",
+    storageBucket: "school-stock.firebasestorage.app",
+    messagingSenderId: "644388078816",
+    appId: "1:644388078816:web:e3fbb702c9a094032d3c85"
+};
+
+let firebaseEnabled = false;
+let firebaseRootRef = null;
+
+// initialize firebase (if SDK loaded)
+function initFirebase() {
+    try {
+        if (window.firebase && firebase.apps && !firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+            firebaseEnabled = true;
+            firebaseRootRef = firebase.database().ref('schoolInventory');
+            setFirebaseStatus('Firebase සබඳතාව සක්‍රීයයි — අළුත් දත්ත සමුදායට යවනු ලැබේ');
+            // optional: you could add a listener to pull remote changes, but to avoid overwriting local changes we only push by default
+        } else if (window.firebase && firebase.apps && firebase.apps.length) {
+            // already initialized
+            firebaseEnabled = true;
+            firebaseRootRef = firebase.database().ref('schoolInventory');
+            setFirebaseStatus('Firebase සබඳතාව සක්‍රීයයි');
+        } else {
+            setFirebaseStatus('Firebase SDK නොපවතී — CDN script එක ඇතුළත් කරලා නැද්ද බලන්න.');
+        }
+    } catch (err) {
+        console.error('Firebase init error:', err);
+        setFirebaseStatus('Firebase සවිකිරීමේ දෝෂයක්: ' + err.message);
+    }
+}
+
+function setFirebaseStatus(text) {
+    const el = document.getElementById('firebaseStatus');
+    if (el) el.textContent = 'Firebase සම්බන්ධතා තත්ත්වය: ' + text;
+}
+
+// IndexedDB setup
 request.onupgradeneeded = function(event) {
     db = event.target.result;
     if (!db.objectStoreNames.contains('inventory')) {
@@ -19,8 +62,58 @@ request.onupgradeneeded = function(event) {
 
 request.onsuccess = function(event) {
     db = event.target.result;
+    initFirebase(); // initialize firebase after DB ready
     loadInventory();
 };
+
+request.onerror = function(event) {
+    console.error('IndexedDB error:', event);
+};
+
+// helper: getAll from store as Promise
+function getAllFromStore(storeName) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction([storeName], 'readonly');
+        const store = tx.objectStore(storeName);
+        const req = store.getAll();
+        req.onsuccess = function(e) { resolve(e.target.result || []); };
+        req.onerror = function(e) { reject(e.target.error); };
+    });
+}
+
+// sync local indexedDB data to Firebase (simple strategy: push full datasets)
+function syncToFirebase() {
+    if (!firebaseEnabled || !firebaseRootRef) return;
+    Promise.all([
+        getAllFromStore('inventory'),
+        getAllFromStore('purchaseHistory'),
+        getAllFromStore('distribution')
+    ]).then(([inventory, purchaseHistory, distribution]) => {
+        const payload = {
+            inventory,
+            purchaseHistory,
+            distribution,
+            lastSyncedAt: new Date().toISOString()
+        };
+        firebaseRootRef.set(payload)
+            .then(() => setFirebaseStatus('දත්ත Firebase වෙත සාර්ථකව යවා ඇත (' + new Date().toLocaleString() + ')'))
+            .catch(err => {
+                console.error('Firebase write error:', err);
+                setFirebaseStatus('Firebase ලිවීමේ දෝෂයක්: ' + err.message);
+            });
+    }).catch(err => {
+        console.error('Error reading stores for sync:', err);
+    });
+}
+
+// Call syncToFirebase after operations that change data
+function scheduleSync() {
+    // small debounce to avoid excessive writes
+    if (window.__syncTimeout) clearTimeout(window.__syncTimeout);
+    window.__syncTimeout = setTimeout(() => {
+        syncToFirebase();
+    }, 600);
+}
 
 let editingId = null;
 
@@ -34,8 +127,8 @@ document.getElementById('inventoryForm').addEventListener('submit', function(eve
     const invoiceNumber = document.getElementById('invoiceNumber').value;
     const receiptNumber = document.getElementById('receiptNumber').value;
     const supplierName = document.getElementById('supplierName').value;
-    const quantityReceived = parseInt(document.getElementById('quantityReceived').value);
-    const quantityIssued = parseInt(document.getElementById('quantityIssued').value);
+    const quantityReceived = parseInt(document.getElementById('quantityReceived').value) || 0;
+    const quantityIssued = parseInt(document.getElementById('quantityIssued').value) || 0;
 
     const transaction = db.transaction(['inventory', 'purchaseHistory'], 'readwrite');
     const store = transaction.objectStore('inventory');
@@ -78,6 +171,7 @@ document.getElementById('inventoryForm').addEventListener('submit', function(eve
                 loadInventory();
                 document.getElementById('inventoryForm').reset();
                 editingId = null;
+                scheduleSync();
             };
         };
     } else {
@@ -118,6 +212,7 @@ document.getElementById('inventoryForm').addEventListener('submit', function(eve
             
             loadInventory();
             document.getElementById('inventoryForm').reset();
+            scheduleSync();
         };
     }
 });
@@ -154,6 +249,8 @@ function loadInventory() {
             tableBody.appendChild(row);
         });
         updateAllDistributionHistory();
+        // After loading (display) we can sync current local state to Firebase
+        scheduleSync();
     };
 }
 
@@ -220,6 +317,7 @@ function distributeItem(id) {
 
                 loadInventory();
                 alert("අයිතමය සාර්ථකව බෙදාහරින ලදී.");
+                scheduleSync();
             } else {
                 alert("ප්‍රමාණවත් තොගයක් නොමැත.");
             }
@@ -257,6 +355,7 @@ function deleteItem(id) {
 
         request.onsuccess = function() {
             loadInventory();
+            scheduleSync();
         };
     }
 }
@@ -416,6 +515,7 @@ function importBackup(event) {
                 if (totalAddedItems === totalExpectedItems) {
                     loadInventory();
                     alert('දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී.');
+                    scheduleSync(); // sync restored data to Firebase
                 }
             }
         } catch (error) {
@@ -426,6 +526,7 @@ function importBackup(event) {
     
     reader.readAsText(file);
 }
+
 // Update all rows' distribution history
 function updateAllDistributionHistory() {
     const rows = document.querySelectorAll('#inventoryTable tbody tr');
