@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>පාසල් තොග ගබඩා පද්ධතිය</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- Firebase (compat) SDKs - replace versions if you prefer -->
+    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
 <body>
     <div class="container">
         <h1>පාසල් තොග ගබඩා පද්ධතිය</h1>
-        
         <form id="inventoryForm">
             <div class="form-group">
                 <label for="itemDescription">අයිතම විස්තරය:</label>
@@ -52,37 +51,36 @@
         <div id="purchaseHistory"></div>
 
         <div class="buttons">
-            <button onclick="printInventory()" class="btn">තොග ලැයිස්තුව මුද්‍රණය කරන්න</button>
-            <button onclick="exportBackup()" class="btn">උපස්ථ පිටපත</button>
+            <button onclick="printInventory()" class="btn">මුද්‍රණය</button>
+            <button onclick="exportBackup()" class="btn">උපස්ථ</button>
             <input type="file" id="restoreFile" style="display: none;" onchange="importBackup(event)">
-            <button onclick="document.getElementById('restoreFile').click()" class="btn">ප්‍රතිස්ථාපනය කරන්න</button>
+            <button onclick="document.getElementById('restoreFile').click()" class="btn">ප්‍රතිස්ථාපනය</button>
         </div>
 
-        <input type="text" id="search" placeholder="අයිතම සොයන්න...">
+        <input type="text" id="search" placeholder="සොයන්න...">
 
         <h2>තොග ලැයිස්තුව</h2>
         <table id="inventoryTable">
             <thead>
                 <tr>
                     <th>අයිතම විස්තරය</th>
-                    <th>ගබඩා පොත් පිටු අංකය</th>
-                    <th>මිලදී ගත් දිනය</th>
-                    <th>ඉන්වොයිස් අංකය</th>
-                    <th>කුවිතාන්සි අංකය</th>
-                    <th>සැපයුම්කරුගේ නම</th>
-                    <th>ලැබුණු ප්‍රමාණය</th>
-                    <th>නිකුත් කළ ප්‍රමාණය</th>
-                    <th>ඉතිරි ප්‍රමාණය</th>
+                    <th>ගබඩා පිටු</th>
+                    <th>දිනය</th>
+                    <th>ඉන්වොයිස්</th>
+                    <th>කුවිතාන්සි</th>
+                    <th>සැපයුම්කරු</th>
+                    <th>ලැබුණු</th>
+                    <th>නිකුත්</th>
+                    <th>ඉතිරි</th>
                     <th>ක්‍රියා</th>
                 </tr>
             </thead>
             <tbody></tbody>
         </table>
 
-        <div id="firebaseStatus" class="firebase-status">Firebase සම්බන්ධතා තත්ත්වය: නොසැකසී ඇත</div>
+        <div id="firebaseStatus" class="firebase-status">Firebase status: Not connected</div>
     </div>
 
-    <!-- IMPORTANT: this references the JS file included in your upload -->
     <script src="scripts.js"></script>
 </body>
 </html>
