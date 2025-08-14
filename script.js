@@ -1,22 +1,29 @@
+// ================== IndexedDB Open ==================
 let db;
 const request = indexedDB.open('schoolInventory', 4);
 
-/* ========= 1) FIREBASE CONFIG =========
-   ⚠️ මෙහි ඔබගේ Firebase config දාන්න (Project settings -> General -> Your apps -> SDK setup and configuration)
-*/
+// ---------- Firebase Config (from you) ----------
 const firebaseConfig = {
   apiKey: "AIzaSyAPiJHMYJzQdRh0XrE42803BaT7jzGuZ9A",
   authDomain: "school-stock.firebaseapp.com",
-  projectId: "school-stock",        // Firestore ඉතාම වැදගත්
+  projectId: "school-stock",
   storageBucket: "school-stock.firebasestorage.app",
   messagingSenderId: "644388078816",
-  appId: "1:644388078816:web:e3fbb702c9a094032d3c85"
+  appId: "1:644388078816:web:e3fbb702c9a094032d3c85",
+  measurementId: "G-PN72JHLB5M"
 };
 
+// ---------- Globals ----------
 let firebaseEnabled = false;
 let firestore = null;
+const CLIENT_ID_KEY = 'schoolInventory_clientId';
+let CLIENT_ID = localStorage.getItem(CLIENT_ID_KEY);
+if (!CLIENT_ID) {
+  CLIENT_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  localStorage.setItem(CLIENT_ID_KEY, CLIENT_ID);
+}
 
-// ========= 2) Initialize Firebase + Firestore =========
+// ================== Firebase Init ==================
 function initFirebase() {
   try {
     if (window.firebase && firebase.apps && !firebase.apps.length) {
@@ -26,12 +33,13 @@ function initFirebase() {
       firestore = firebase.firestore();
       firebaseEnabled = true;
       setFirebaseStatus('Firebase (Firestore) සබඳතාව සක්‍රීයයි — දත්ත Firestore වෙත සකසන ලැබේ');
+      startLivePull(); // 🔴 start real-time pull AFTER init
     } else {
       setFirebaseStatus('Firebase SDK නොපවතී — CDN script ඇතුළත් කරලා නැද්ද බලන්න.');
     }
   } catch (err) {
     console.error('Firebase init error:', err);
-    setFirebaseStatus('Firebase සවිකිරීමේ දෝෂයක්: ' + err.message);
+    setFirebaseStatus('Firebase සවිකිරීමේ දෝෂයක්: ' + (err?.message || err));
   }
 }
 
@@ -40,10 +48,10 @@ function setFirebaseStatus(text) {
   if (el) el.textContent = 'Firebase සම්බන්ධතා තත්ත්වය: ' + text;
 }
 
-/* ========= 3) IndexedDB schema =========
-   (ඔරിജිනල් කේතයේම වගේ — inventory / distribution / purchaseHistory stores) */
+// ================== IDB Schema ==================
 request.onupgradeneeded = function (event) {
   db = event.target.result;
+
   if (!db.objectStoreNames.contains('inventory')) {
     const store = db.createObjectStore('inventory', { keyPath: 'id', autoIncrement: true });
     store.createIndex('itemDescription', 'itemDescription', { unique: true });
@@ -60,15 +68,15 @@ request.onupgradeneeded = function (event) {
 
 request.onsuccess = function (event) {
   db = event.target.result;
-  initFirebase();       // Firestore init
-  loadInventory();      // UI populate
+  initFirebase();   // 🔵 connect Firebase
+  loadInventory();  // render UI
 };
 
 request.onerror = function (event) {
   console.error('IndexedDB error:', event);
 };
 
-// helper: getAll from store as Promise
+// ================== Helpers ==================
 function getAllFromStore(storeName) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction([storeName], 'readonly');
@@ -79,12 +87,27 @@ function getAllFromStore(storeName) {
   });
 }
 
-/* ========= 4) SYNC to Firestore =========
-   Local IndexedDB -> Firestore collections:
-   - inventory
-   - purchaseHistory
-   - distribution
-*/
+function putToStore(storeName, obj) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([storeName], 'readwrite');
+    const store = tx.objectStore(storeName);
+    const req = store.put(obj);
+    req.onsuccess = () => resolve(true);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function deleteFromStore(storeName, id) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([storeName], 'readwrite');
+    const store = tx.objectStore(storeName);
+    const req = store.delete(id);
+    req.onsuccess = () => resolve(true);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// ================== Local -> Firestore Sync ==================
 async function syncToFirebase() {
   if (!firebaseEnabled || !firestore) return;
 
@@ -95,11 +118,11 @@ async function syncToFirebase() {
       getAllFromStore('distribution')
     ]);
 
-    // inventory (batch upsert)
+    // inventory
     let batch = firestore.batch();
     inventory.forEach(item => {
       const ref = firestore.collection('inventory').doc(String(item.id));
-      batch.set(ref, item, { merge: true });
+      batch.set(ref, { ...item, _clientId: CLIENT_ID, _updatedAt: Date.now() }, { merge: true });
     });
     await batch.commit();
 
@@ -107,7 +130,7 @@ async function syncToFirebase() {
     batch = firestore.batch();
     purchaseHistory.forEach(h => {
       const ref = firestore.collection('purchaseHistory').doc(String(h.id));
-      batch.set(ref, h, { merge: true });
+      batch.set(ref, { ...h, _clientId: CLIENT_ID, _updatedAt: Date.now() }, { merge: true });
     });
     await batch.commit();
 
@@ -116,35 +139,87 @@ async function syncToFirebase() {
       batch = firestore.batch();
       distribution.forEach(d => {
         const ref = firestore.collection('distribution').doc(String(d.id));
-        batch.set(ref, d, { merge: true });
+        batch.set(ref, { ...d, _clientId: CLIENT_ID, _updatedAt: Date.now() }, { merge: true });
       });
       await batch.commit();
     }
 
-    // meta
     await firestore.collection('_meta').doc('schoolInventory').set({
-      lastSyncedAt: new Date().toISOString()
+      lastSyncedAt: new Date().toISOString(),
+      _clientId: CLIENT_ID
     }, { merge: true });
 
     setFirebaseStatus('දත්ත Firestore වෙත සාර්ථකව යවා ඇත (' + new Date().toLocaleString() + ')');
   } catch (err) {
     console.error('Firestore write error:', err);
-    setFirebaseStatus('Firestore ලිවීමේ දෝෂයක්: ' + err.message);
+    setFirebaseStatus('Firestore ලිවීමේ දෝෂයක්: ' + (err?.message || err));
   }
 }
 
-// small debounce to avoid excessive writes
+// debounce sync
 function scheduleSync() {
   if (window.__syncTimeout) clearTimeout(window.__syncTimeout);
-  window.__syncTimeout = setTimeout(() => {
-    syncToFirebase();
-  }, 600);
+  window.__syncTimeout = setTimeout(syncToFirebase, 600);
 }
 
+// ================== Firestore -> Local Live Pull ==================
+let unsubscribes = [];
+function startLivePull() {
+  if (!firebaseEnabled || !firestore) return;
+
+  const debouncedUIRefresh = debounce(() => {
+    loadInventory();
+  }, 300);
+
+  // Helper to bind a collection to a store
+  function bind(colName, storeName) {
+    const unsub = firestore.collection(colName).onSnapshot(snapshot => {
+      snapshot.docChanges().forEach(change => {
+        const data = change.doc.data() || {};
+        // Avoid echo: ignore docs we just wrote from THIS client
+        if (data._clientId && data._clientId === CLIENT_ID) return;
+
+        const id = parseInt(change.doc.id, 10);
+        // If id is not a number, skip (we rely on numeric IDs)
+        if (Number.isNaN(id)) return;
+
+        if (change.type === 'removed') {
+          deleteFromStore(storeName, id).then(debouncedUIRefresh);
+        } else {
+          // Normalize: ensure 'id' field exists for our IDB schema
+          const obj = { ...data, id };
+          putToStore(storeName, obj).then(debouncedUIRefresh);
+        }
+      });
+    }, err => {
+      console.error(`onSnapshot error (${colName}):`, err);
+    });
+
+    unsubscribes.push(unsub);
+  }
+
+  bind('inventory', 'inventory');
+  bind('purchaseHistory', 'purchaseHistory');
+  bind('distribution', 'distribution');
+
+  // Clean up on page close
+  window.addEventListener('beforeunload', () => {
+    unsubscribes.forEach(u => { try { u(); } catch {} });
+    unsubscribes = [];
+  });
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(null, args), ms);
+  };
+}
+
+// ================== UI & Actions ==================
 let editingId = null;
 
-/* ========= 5) FORM submit (Add / Update) =========
-   (ඔරিজිනල් logic එක රැස් කරලා — Firestore sync එක scheduleSync() හරහා) */
 document.getElementById('inventoryForm').addEventListener('submit', function (event) {
   event.preventDefault();
 
@@ -162,11 +237,10 @@ document.getElementById('inventoryForm').addEventListener('submit', function (ev
   const purchaseHistoryStore = transaction.objectStore('purchaseHistory');
 
   if (editingId) {
-    // Update existing item
     const getRequest = store.get(editingId);
     getRequest.onsuccess = function (e) {
       const existingItem = e.target.result;
-      const newRemainingQuantity = existingItem.remainingQuantity + quantityReceived;
+      const newRemainingQuantity = (existingItem.remainingQuantity || 0) + quantityReceived;
 
       const item = {
         id: editingId,
@@ -176,16 +250,15 @@ document.getElementById('inventoryForm').addEventListener('submit', function (ev
         invoiceNumber,
         receiptNumber,
         supplierName,
-        quantityReceived: existingItem.quantityReceived + quantityReceived,
-        quantityIssued: existingItem.quantityIssued,
+        quantityReceived: (existingItem.quantityReceived || 0) + quantityReceived,
+        quantityIssued: existingItem.quantityIssued || 0,
         remainingQuantity: newRemainingQuantity
       };
 
       const updateRequest = store.put(item);
       updateRequest.onsuccess = function () {
-        // Add purchase history
         const purchaseHistory = {
-          id: undefined,                 // auto-increment by IDB
+          id: undefined,
           itemId: editingId,
           purchaseDate,
           quantityReceived,
@@ -197,11 +270,10 @@ document.getElementById('inventoryForm').addEventListener('submit', function (ev
         loadInventory();
         document.getElementById('inventoryForm').reset();
         editingId = null;
-        scheduleSync();
+        scheduleSync(); // push to Firestore
       };
     };
   } else {
-    // New item
     const item = {
       itemDescription,
       stockPage,
@@ -210,18 +282,16 @@ document.getElementById('inventoryForm').addEventListener('submit', function (ev
       receiptNumber,
       supplierName,
       quantityReceived,
-      quantityIssued: 0,
+      quantityIssued: quantityIssued || 0,
       remainingQuantity: quantityReceived
     };
 
     const addRequest = store.add(item);
-
     addRequest.onerror = function (e) {
       if (e.target.error.name === 'ConstraintError') {
         alert('අයිතමය දැනටමත් පවතී. කරුණාකර වෙනත් විස්තරයක් භාවිතා කරන්න.');
       }
     };
-
     addRequest.onsuccess = function (e) {
       const itemId = e.target.result;
       const purchaseHistory = {
@@ -241,28 +311,27 @@ document.getElementById('inventoryForm').addEventListener('submit', function (ev
   }
 });
 
-/* ========= 6) Load + Table render ========= */
 function loadInventory() {
   const transaction = db.transaction(['inventory'], 'readonly');
   const store = transaction.objectStore('inventory');
   const request = store.getAll();
 
   request.onsuccess = function (event) {
-    const inventory = event.target.result;
+    const inventory = event.target.result || [];
     const tableBody = document.querySelector('#inventoryTable tbody');
     tableBody.innerHTML = '';
     inventory.forEach(item => {
       const row = document.createElement('tr');
       row.innerHTML = `
-        <td>${item.itemDescription}</td>
-        <td>${item.stockPage}</td>
-        <td>${item.purchaseDate}</td>
-        <td>${item.invoiceNumber}</td>
-        <td>${item.receiptNumber}</td>
-        <td>${item.supplierName}</td>
-        <td>${item.quantityReceived}</td>
-        <td>${item.quantityIssued}</td>
-        <td>${item.remainingQuantity}</td>
+        <td>${item.itemDescription || ''}</td>
+        <td>${item.stockPage || ''}</td>
+        <td>${item.purchaseDate || ''}</td>
+        <td>${item.invoiceNumber || ''}</td>
+        <td>${item.receiptNumber || ''}</td>
+        <td>${item.supplierName || ''}</td>
+        <td>${item.quantityReceived || 0}</td>
+        <td>${item.quantityIssued || 0}</td>
+        <td>${item.remainingQuantity || 0}</td>
         <td>
           <button onclick="editItem(${item.id})">සංස්කරණය</button>
           <button onclick="deleteItem(${item.id})">ඉවත් කරන්න</button>
@@ -273,11 +342,9 @@ function loadInventory() {
       tableBody.appendChild(row);
     });
     updateAllDistributionHistory();
-    scheduleSync(); // Firestore sync after (re)render
   };
 }
 
-/* ========= 7) Purchase history panel ========= */
 function showPurchaseHistory(itemId) {
   const tx = db.transaction(['purchaseHistory'], 'readonly');
   const store = tx.objectStore('purchaseHistory');
@@ -285,7 +352,7 @@ function showPurchaseHistory(itemId) {
   const req = index.getAll(itemId);
 
   req.onsuccess = function (e) {
-    const purchaseHistory = e.target.result;
+    const purchaseHistory = e.target.result || [];
     let historyHTML = '<h3>මිලදී ගැනීම් ඉතිහාසය</h3>';
     if (purchaseHistory.length > 0) {
       historyHTML += '<ul>';
@@ -300,7 +367,6 @@ function showPurchaseHistory(itemId) {
   };
 }
 
-/* ========= 8) Distribute ========= */
 function distributeItem(id) {
   const recipient = prompt("ලබන්නාගේ නම ඇතුළත් කරන්න:");
   const quantity = parseInt(prompt("බෙදාහරින ප්‍රමාණය ඇතුළත් කරන්න:"));
@@ -315,9 +381,9 @@ function distributeItem(id) {
     getReq.onsuccess = function (e) {
       const item = e.target.result;
 
-      if (item.remainingQuantity >= quantity) {
-        item.quantityIssued += quantity;
-        item.remainingQuantity -= quantity;
+      if ((item.remainingQuantity || 0) >= quantity) {
+        item.quantityIssued = (item.quantityIssued || 0) + quantity;
+        item.remainingQuantity = (item.remainingQuantity || 0) - quantity;
         inventoryStore.put(item);
 
         const distribution = { id: undefined, itemId: id, recipient, quantity, date };
@@ -333,7 +399,6 @@ function distributeItem(id) {
   }
 }
 
-/* ========= 9) Edit / Delete ========= */
 function editItem(id) {
   const tx = db.transaction(['inventory'], 'readonly');
   const store = tx.objectStore('inventory');
@@ -341,14 +406,14 @@ function editItem(id) {
 
   req.onsuccess = function (e) {
     const item = e.target.result;
-    document.getElementById('itemDescription').value = item.itemDescription;
-    document.getElementById('stockPage').value = item.stockPage;
-    document.getElementById('purchaseDate').value = item.purchaseDate;
-    document.getElementById('invoiceNumber').value = item.invoiceNumber;
-    document.getElementById('receiptNumber').value = item.receiptNumber;
-    document.getElementById('supplierName').value = item.supplierName;
-    document.getElementById('quantityReceived').value = 0;  // new purchases only
-    document.getElementById('quantityIssued').value = item.quantityIssued;
+    document.getElementById('itemDescription').value = item.itemDescription || '';
+    document.getElementById('stockPage').value = item.stockPage || '';
+    document.getElementById('purchaseDate').value = item.purchaseDate || '';
+    document.getElementById('invoiceNumber').value = item.invoiceNumber || '';
+    document.getElementById('receiptNumber').value = item.receiptNumber || '';
+    document.getElementById('supplierName').value = item.supplierName || '';
+    document.getElementById('quantityReceived').value = 0;
+    document.getElementById('quantityIssued').value = item.quantityIssued || 0;
     editingId = id;
   };
 }
@@ -362,12 +427,10 @@ async function deleteItem(id) {
 
   req.onsuccess = async function () {
     loadInventory();
-    // Firestore වලින්ත් ඉවත් කරමු (ගැලපෙන්නේ docId = local id)
     if (firebaseEnabled && firestore) {
       try {
         await firestore.collection('inventory').doc(String(id)).delete();
       } catch (e) {
-        // silent; next full sync එකෙන් state align වෙයි
         console.warn('Firestore delete warning:', e?.message);
       }
     }
@@ -375,7 +438,6 @@ async function deleteItem(id) {
   };
 }
 
-/* ========= 10) Search + distribution history display ========= */
 document.getElementById('search').addEventListener('input', function () {
   const searchValue = this.value.toLowerCase();
   const rows = document.querySelectorAll('#inventoryTable tbody tr');
@@ -400,7 +462,7 @@ function fetchAndDisplayDistributionHistory(itemId, row) {
   const req = index.getAll(parseInt(itemId));
 
   req.onsuccess = function (e) {
-    const distributions = e.target.result;
+    const distributions = e.target.result || [];
     let historyHTML = '<div class="distribution-history">';
     if (distributions.length > 0) {
       historyHTML += '<h4>බෙදාහැරීම් ඉතිහාසය:</h4><ul>';
@@ -418,7 +480,15 @@ function fetchAndDisplayDistributionHistory(itemId, row) {
   };
 }
 
-/* ========= 11) Print / Backup / Restore ========= */
+function updateAllDistributionHistory() {
+  const rows = document.querySelectorAll('#inventoryTable tbody tr');
+  rows.forEach(row => {
+    const itemId = row.querySelector('button[onclick^="editItem"]').getAttribute('onclick').match(/\d+/)[0];
+    fetchAndDisplayDistributionHistory(itemId, row);
+  });
+}
+
+// ================== Print / Backup / Restore ==================
 function printInventory() {
   window.print();
 }
@@ -431,11 +501,11 @@ function exportBackup() {
   const distributionStore = tx.objectStore('distribution');
 
   inventoryStore.getAll().onsuccess = function (e) {
-    backupData.inventory = e.target.result;
+    backupData.inventory = e.target.result || [];
     purchaseHistoryStore.getAll().onsuccess = function (e2) {
-      backupData.purchaseHistory = e2.target.result;
+      backupData.purchaseHistory = e2.target.result || [];
       distributionStore.getAll().onsuccess = function (e3) {
-        backupData.distribution = e3.target.result;
+        backupData.distribution = e3.target.result || [];
 
         const jsonString = JSON.stringify(backupData);
         const blob = new Blob([jsonString], { type: "application/json" });
@@ -471,30 +541,30 @@ function importBackup(event) {
       let addedPurchaseHistoryCount = 0;
       let addedDistributionCount = 0;
 
-      data.inventory.forEach(item => {
+      (data.inventory || []).forEach(item => {
         inventoryStore.add(item).onsuccess = function () {
           addedInventoryCount++; checkCompletion();
         };
       });
 
-      data.purchaseHistory.forEach(history => {
+      (data.purchaseHistory || []).forEach(history => {
         purchaseHistoryStore.add(history).onsuccess = function () {
           addedPurchaseHistoryCount++; checkCompletion();
         };
       });
 
-      if (data.distribution && data.distribution.length > 0) {
-        data.distribution.forEach(dist => {
-          distributionStore.add(dist).onsuccess = function () {
-            addedDistributionCount++; checkCompletion();
-          };
-        });
-      } else {
-        addedDistributionCount = 0;
-      }
+      (data.distribution || []).forEach(dist => {
+        distributionStore.add(dist).onsuccess = function () {
+          addedDistributionCount++; checkCompletion();
+        };
+      });
 
       function checkCompletion() {
-        const totalExpected = data.inventory.length + data.purchaseHistory.length + (data.distribution ? data.distribution.length : 0);
+        const totalExpected =
+          (data.inventory?.length || 0) +
+          (data.purchaseHistory?.length || 0) +
+          (data.distribution?.length || 0);
+
         const totalAdded = addedInventoryCount + addedPurchaseHistoryCount + addedDistributionCount;
 
         if (totalAdded === totalExpected) {
@@ -510,12 +580,4 @@ function importBackup(event) {
   };
 
   reader.readAsText(file);
-}
-
-function updateAllDistributionHistory() {
-  const rows = document.querySelectorAll('#inventoryTable tbody tr');
-  rows.forEach(row => {
-    const itemId = row.querySelector('button[onclick^="editItem"]').getAttribute('onclick').match(/\d+/)[0];
-    fetchAndDisplayDistributionHistory(itemId, row);
-  });
 }
